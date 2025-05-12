@@ -1,0 +1,51 @@
+import pandas as pd
+import numpy as np
+from datetime import datetime
+
+# Sample data
+input_data = [
+    {'business_date': '5/6/2025', 'start_date': '5/6/2025', 'end_date': '5/7/2025', 'composite_repo_rate': 4.3473617},
+    {'business_date': '5/6/2025', 'start_date': '5/7/2025', 'end_date': '5/8/2025', 'composite_repo_rate': 4.3583495},
+    # More rows...
+]
+
+bValue_data = [
+    {'start_date': '5/6/2025', 'end_date': '5/7/2025', 'repo_rate': 4.3473617},
+    {'start_date': '5/7/2025', 'end_date': '5/8/2025', 'repo_rate': 4.3583495},
+    # More rows...
+]
+
+# Convert to pandas DataFrame
+input_df = pd.DataFrame(input_data)
+bValue_df = pd.DataFrame(bValue_data)
+
+# Convert string to datetime
+input_df['start_date'] = pd.to_datetime(input_df['start_date'], format='%m/%d/%Y')
+input_df['end_date'] = pd.to_datetime(input_df['end_date'], format='%m/%d/%Y')
+bValue_df['start_date'] = pd.to_datetime(bValue_df['start_date'], format='%m/%d/%Y')
+bValue_df['end_date'] = pd.to_datetime(bValue_df['end_date'], format='%m/%d/%Y')
+
+# Calculate repoLen for each term in input_df
+input_df['repoLen'] = (input_df['end_date'] - input_df['start_date']).dt.days / 360
+
+# Function to compute tm(i, j) for exposure vector
+def calculate_tm(row, bValue_df):
+    tm_values = []
+    for _, bValue_row in bValue_df.iterrows():
+        exposure = max(0, min((row['end_date'] - bValue_row['end_date']).days, (row['start_date'] - bValue_row['start_date']).days)) / 360
+        tm_values.append(exposure)
+    return np.array(tm_values)
+
+# Calculate exposure vector for each repo term in input_df
+input_df['expo'] = input_df.apply(lambda row: calculate_tm(row, bValue_df), axis=1)
+
+# Calculate model rate for each repo term
+def calculate_model_rate(row, bValue_df):
+    exposure_vector = row['expo']
+    repo_rates = bValue_df['repo_rate'].values
+    tm_b_prod = np.dot(exposure_vector, repo_rates)
+    return (np.exp(tm_b_prod) - 1) / row['repoLen']
+
+input_df['model_rate'] = input_df.apply(calculate_model_rate, axis=1, bValue_df=bValue_df)
+
+print(input_df[['start_date', 'end_date', 'repoLen', 'model_rate']])
